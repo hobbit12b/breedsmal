@@ -13,7 +13,11 @@
       --card: #ffffff;
       --shadow: 0 10px 30px rgba(0,0,0,.08);
     }
-    html, body {
+    html, body { height: 100%; }
+    html {
+      width: 100%; height: 100%;
+    }
+    body {
       margin: 0;
       font-family: ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
       color: var(--ink);
@@ -23,14 +27,7 @@
       height: 100%;
       overflow: hidden;
     }
-    body {
-      margin: 0;
-      font-family: ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      color: var(--ink);
-      background: radial-gradient(1200px 800px at 10% 0%, var(--bg2), var(--bg1));
-      display: grid;
-      place-items: center;
-    }
+
     .app { width: 100vw; height: 100vh; height: 100dvh; background: var(--card); border-radius: 0; box-shadow: none; display: grid; grid-template-rows: 70px auto 80px; overflow: clip; position: relative; }
 
     header { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 0 16px; background: linear-gradient(90deg, #dfe6ff, #f1f6ff); border-bottom: 1px solid #e6ecff; }
@@ -54,6 +51,12 @@
     .shape[data-kind="B"] { background: linear-gradient(180deg, #ffcd8e, #ffb86c); }
     .shape.dragging { outline: 4px solid #c6d3ff; z-index: 5; transform: none !important; }
     .shape.good { animation: none; transform: none !important; box-shadow: 0 0 0 8px rgba(108,124,255,.18), 0 10px 20px rgba(0,0,0,.08); }
+
+    /* visuele zijkant-hints */
+    .shape .sideHint { position: absolute; top: 8%; bottom: 8%; width: 10px; border-radius: 6px; background: currentColor; opacity: .25; box-shadow: 0 0 10px currentColor, 0 0 18px currentColor; animation: sidePulse 1.2s ease-in-out infinite; pointer-events: none; }
+    .shape .sideHint.left { left: -6px; }
+    .shape .sideHint.right { right: -6px; }
+    @keyframes sidePulse { 0% { opacity: .2; transform: scaleY(.9); } 50% { opacity: 1; transform: scaleY(1); } 100% { opacity: .2; transform: scaleY(.9); } }
 
     /* cartoonogen */
     .shape .eyes, .shape .eyes-closed { position: absolute; inset: 0; display: flex; justify-content: space-evenly; align-items: center; pointer-events: none; transition: opacity .15s ease; }
@@ -147,13 +150,19 @@
     function gradientFromHue(h) { return `linear-gradient(180deg, ${hsl(h,85,70)}, ${hsl(h,85,55)})`; }
     function randomColorPair() { const h1 = randInt(0, 359); const offset = randInt(40, 160); const h2 = (h1 + offset) % 360; return [gradientFromHue(h1), gradientFromHue(h2)]; }
 
-    // Inactiviteit met herhaalzin
+    // Inactiviteit met herhaalzin — FIX: correcte haakjes en geen vreemde else-inhoud
     let idleTimer = null; const IDLE_TIMEOUT = 20000;
     function scheduleIdle() {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
-        if (!compared) { const msg = 'Vergelijk de vormen, sleep de rechthoeken boven elkaar'; setTip(msg); speak(msg); }
-        else { const tgt = playzone.dataset.target || state.lastTarget || 'breed'; const msg = `Sleep de rechthoek die ${tgt} is naar de cirkel`; setTip(msg); speak(msg); }
+        if (!compared) {
+          const msg = 'Vergelijk de vormen, sleep de rechthoeken boven elkaar';
+          setTip(msg); speak(msg);
+        } else {
+          const tgt = playzone.dataset.target || state.lastTarget || 'breed';
+          const msg = `Sleep de rechthoek die ${tgt} is naar de cirkel`;
+          setTip(msg); speak(msg);
+        }
         scheduleIdle();
       }, IDLE_TIMEOUT);
     }
@@ -167,7 +176,7 @@
     function glanceAt(shape, other) { stopScan(shape); const c1 = centerOf(shape), c2 = centerOf(other); const px = c2.x > c1.x ? 56 : 44; const py = randInt(56,60); setPupils(shape, px, py); }
     function wink(shape) { triggerBlink(shape); setTimeout(() => triggerBlink(shape), 160); }
 
-    // Spraak met on-end callback
+    // Spraak met on-end callback en NL-taal
     function speak(text, onend = null, options = {}) {
       if (!audioOn) return;
       const interrupt = options.interrupt !== false; // default: interrupt previous
@@ -180,14 +189,38 @@
       window.speechSynthesis.speak(u);
       return u;
     }
-    function pickDutchVoice() {
-      const vs = speechSynthesis.getVoices();
-      voiceChoice = vs.find(v => v.lang === 'nl-NL') || vs.find(v => v.lang && v.lang.toLowerCase().startsWith('nl')) || null;
+    // Spreek met cue precies op het woord 'zijkant(en)'
+    function speakWithZijkantCue(text) {
+      const lower = (text || '').toLowerCase();
+      let flashed = false;
+      const trigger = () => { if (!flashed) { flashed = true; flashSideHints(); } };
+      // Als audio uit staat, toch subtiel cue moment geven
+      if (!audioOn) {
+        setTimeout(trigger, 700);
+        return speak(text);
+      }
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'nl-NL'; u.rate = 1.0; u.pitch = 1.0;
+      if (voiceChoice) u.voice = voiceChoice;
+      u.onboundary = (e) => {
+        try {
+          if (e.name === 'word') {
+            const rest = lower.slice(e.charIndex);
+            if (rest.startsWith('zijkant')) trigger();
+          }
+        } catch {}
+      };
+      u.onend = () => { if (lower.includes('zijkant')) trigger(); };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+      return u;
     }
+
+    function pickDutchVoice() { const vs = speechSynthesis.getVoices(); voiceChoice = vs.find(v => v.lang === 'nl-NL') || vs.find(v => v.lang && v.lang.toLowerCase().startsWith('nl')) || null; }
 
     // Geluidjes
     function playSuccess() { if (!audioOn || !ctx) return; let t = ctx.currentTime; [784, 988, 1319].forEach((f, i) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(f, t + i*0.12); g.gain.setValueAtTime(0.0001, t + i*0.12); g.gain.exponentialRampToValueAtTime(0.2, t + i*0.12 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + i*0.12 + 0.2); o.connect(g); g.connect(ctx.destination); o.start(t + i*0.12); o.stop(t + i*0.12 + 0.22); }); }
-    function playError() { if (!audioOn || !ctx) return; let t = ctx.currentTime; const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300, t); g.gain.setValueAtTime(0.2, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26); o.connect(g); o.start(t); o.stop(t + 0.28); }
+    function playError() { if (!audioOn || !ctx) return; let t = ctx.currentTime; const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300, t); g.gain.setValueAtTime(0.2, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26); o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.28); }
 
     // Confetti effect
     function confettiBurst(duration = 1600) {
@@ -220,6 +253,19 @@
         d.className = 'sDot on';
         streakEl.appendChild(d);
       }
+    }
+
+    // Zijkant-hint helpers
+    function addSideHints(el) {
+      if (!el || el.querySelector('.sideHint')) return;
+      const rim = (getComputedStyle(el).borderTopColor || '#9bb0ff');
+      ['left','right'].forEach(side => { const d = document.createElement('div'); d.className = 'sideHint ' + side; d.style.color = rim; el.appendChild(d); });
+    }
+    function removeSideHints(el) { if (!el) return; el.querySelectorAll('.sideHint').forEach(n => n.remove()); }
+    function flashSideHints(duration = 1600) {
+      const shapes = playzone.querySelectorAll('.shape');
+      shapes.forEach(addSideHints);
+      setTimeout(() => { shapes.forEach(removeSideHints); }, duration);
     }
 
     // Hulpfuncties
@@ -333,13 +379,27 @@
       el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
     }
 
+    function decideCorrectKind(wA, wB, target) { const bigger = wA > wB ? 'A' : 'B'; const smaller = wA > wB ? 'B' : 'A'; return target === 'breed' ? bigger : smaller; }
+
+    // Bepaal of we in de foutmelding ook iets over de hoogte moeten zeggen
+    // Alleen als het hoogteverschil tussen de twee rechthoeken duidelijk zichtbaar is
+    function heightDetailForFeedback(wSel, hSel, wOther, hOther, threshold = 0.24) {
+      const diff = Math.abs(hSel - hOther) / Math.max(hSel, hOther || 1);
+      if (diff < threshold) return '';
+      const taller = hSel > hOther;
+      const narrower = wSel < wOther;
+      const wider = wSel > wOther;
+      if (taller && narrower) return 'hij is hoog en smal';
+      if (!taller && wider) return 'hij is laag en breed';
+      // gemengde gevallen, noem alleen de hoogte
+      return taller ? 'hij is hoger dan de andere' : 'hij is lager dan de andere';
+    }
+
     function checkAnswer(el) {
       const target = playzone.dataset.target;
       const wA = parseInt(playzone.dataset.widthA, 10);
       const wB = parseInt(playzone.dataset.widthB, 10);
-      const bigger = wA > wB ? 'A' : 'B';
-      const smaller = wA > wB ? 'B' : 'A';
-      const correctKind = target === 'breed' ? bigger : smaller;
+      const correctKind = decideCorrectKind(wA, wB, target);
 
       if (el.dataset.kind === correctKind) {
         streak += 1; renderStreak();
@@ -352,9 +412,19 @@
       } else {
         streak = 0; renderStreak();
         const rule = target === 'breed' ? 'Als de vorm breed is, dan zijn de zijkanten ver uit elkaar' : 'Als de vorm smal is, dan zijn de zijkanten dicht bij elkaar';
-        const msg = (target === 'breed' ? 'We zoeken breed, kijk nog eens' : 'We zoeken smal, kijk nog eens') + '. ' + rule;
-        setTip(msg); speak(msg);
-        dropCircle.classList.add('shake'); playError(); setTimeout(() => dropCircle.classList.remove('shake'), 400);
+        const other = [...playzone.querySelectorAll('.shape')].find(n => n !== el);
+        const wSel = el.offsetWidth, hSel = el.offsetHeight;
+        const wO = other ? other.offsetWidth : wSel;
+        const hO = other ? other.offsetHeight : hSel;
+        const detail = heightDetailForFeedback(wSel, hSel, wO, hO);
+        const base = target === 'breed' ? 'De gekozen rechthoek is niet breed' : 'De gekozen rechthoek is niet smal';
+        const why = detail ? `${base}, ${detail}` : base;
+        const msg = `${why}. Probeer het nog eens. Kijk goed naar de zijkanten links en rechts. ${rule}`;
+        setTip(msg);
+        speakWithZijkantCue(msg);
+        dropCircle.classList.add('shake');
+        playError();
+        setTimeout(() => dropCircle.classList.remove('shake'), 400);
       }
     }
 
@@ -389,13 +459,24 @@
       if (shapes.length === 2) { placeShapes(shapes[0], shapes[1]); }
     });
 
-    // Zelftest
+    // Zelftest — bestaande test + extra cases
     (function runSelfTests(){
       try {
         console.assert(typeof speak === 'function', 'speak() ontbreekt');
         console.assert(typeof chooseTarget === 'function', 'chooseTarget() ontbreekt');
         const t = chooseTarget();
         console.assert(t === 'breed' || t === 'smal', 'chooseTarget ongeldig');
+        // Extra: beslislogica
+        console.assert(decideCorrectKind(200,180,'breed') === 'A', 'decideCorrectKind breed faalt');
+        console.assert(decideCorrectKind(200,180,'smal') === 'B', 'decideCorrectKind smal faalt');
+        console.assert(decideCorrectKind(150,200,'breed') === 'B', 'decideCorrectKind breed omgekeerd faalt');
+        // Extra: scheduleIdle zet timer
+        scheduleIdle();
+        console.assert(typeof idleTimer !== 'undefined' && idleTimer !== null, 'scheduleIdle zet geen timer');
+        // tests voor hoogte-detail logica
+        console.assert(heightDetailForFeedback(120, 200, 160, 100).includes('hoog') || heightDetailForFeedback(120, 200, 160, 100).includes('hoger'), 'hoogte-detail: hoog verwacht');
+        console.assert(heightDetailForFeedback(220, 90, 140, 160).includes('laag') || heightDetailForFeedback(220, 90, 140, 160).includes('lager'), 'hoogte-detail: laag verwacht');
+        console.assert(heightDetailForFeedback(160, 120, 158, 118) === '', 'hoogte-detail: leeg bij kleine verschillen');
       } catch(e) { console.error('Zelftest faalde', e); }
     })();
   </script>
