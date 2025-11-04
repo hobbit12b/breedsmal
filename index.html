@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>Breed of Smal — Kleuterspel</title>
+  <title>Breed of Smal: Kleuterspel</title>
   <style>
     :root {
       --bg1: #f9fbff;
@@ -35,6 +35,14 @@
     .brand .mascot { font-size: 28px; }
     .pill { background: #fff; border: 1px solid #e6ecff; border-radius: 999px; padding: 8px 14px; cursor: pointer; user-select: none; box-shadow: 0 2px 10px rgba(0,0,0,.04); transition: transform .1s ease; font-weight: 600; }
     .pill:active { transform: scale(.98); }
+
+    /* icon knoppen */
+    .icon-btn { width: 44px; height: 44px; padding: 8px; display: inline-flex; align-items: center; justify-content: center; }
+    .icon { width: 22px; height: 22px; display: block; }
+    .icon-wrap { position: relative; width: 22px; height: 22px; display: block; }
+    .mute-x { position: absolute; inset: 0; display: none; stroke: #e53935; stroke-width: 2.8; stroke-linecap: round; fill: none; }
+    .icon-btn.is-muted .mute-x { display: block; }
+    .icon-btn.is-muted .waves { display: none; }
 
     .board { display: grid; grid-template-columns: 1fr 240px; gap: 18px; padding: 16px; height: 100%; background: radial-gradient(800px 600px at 70% 40%, #f5f9ff, #fff); position: relative; }
     .playzone { position: relative; z-index: 2; }
@@ -96,8 +104,29 @@
   <div class="app" id="app">
     <header>
       <div class="brand"><span class="mascot">🟦</span> <span>Breed of Smal</span></div>
-      <button class="pill" id="btnRepeat" title="Herhaal de opdracht">🔁 Herhaal</button>
-      <button class="pill" id="btnMute" title="Geluid aan of uit">🔊 Geluid</button>
+
+      <!-- Uitleg, herhaal als vraagteken -->
+      <button class="pill icon-btn" id="btnRepeat" title="Uitleg of herhaal" aria-label="Uitleg">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="M9.5 9.25c0-1.5 1.3-2.5 2.7-2.5 1.4 0 2.7 1 2.7 2.4 0 1.8-2 2.1-2.4 3.5m-.3 3.1h.01"
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <!-- Geluid aan of uit met rood kruis bij stil -->
+      <button class="pill icon-btn" id="btnMute" title="Geluid aan of uit" aria-pressed="false" aria-label="Geluid">
+        <span class="icon-wrap" aria-hidden="true">
+          <svg class="icon icon-speaker" viewBox="0 0 24 24">
+            <path d="M4 10h4l5-4v12l-5-4H4z" fill="currentColor"/>
+            <path class="waves" d="M16 8c1.8 1.6 1.8 4.4 0 6M18.5 6.5c3.2 3 3.2 8 0 11"
+                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <svg class="mute-x" viewBox="0 0 24 24">
+            <path d="M5 5l14 14M19 5L5 19" />
+          </svg>
+        </span>
+      </button>
     </header>
 
     <div class="board">
@@ -139,7 +168,7 @@
     // Staat
     let audioOn = true; let compared = false; let voiceChoice = null; let ctx = null;
     const state = { lastTarget: null };
-    let streak = 0; // aantal achtereenvolgende goede antwoorden
+    let streak = 0;
 
     function setTip(t) { tipEl.textContent = t || '\u00A0'; }
     function chooseTarget() { if (state.lastTarget === 'breed') return 'smal'; if (state.lastTarget === 'smal') return 'breed'; return Math.random() < .5 ? 'breed' : 'smal'; }
@@ -150,7 +179,10 @@
     function gradientFromHue(h) { return `linear-gradient(180deg, ${hsl(h,85,70)}, ${hsl(h,85,55)})`; }
     function randomColorPair() { const h1 = randInt(0, 359); const offset = randInt(40, 160); const h2 = (h1 + offset) % 360; return [gradientFromHue(h1), gradientFromHue(h2)]; }
 
-    // Inactiviteit met herhaalzin — FIX: correcte haakjes en geen vreemde else-inhoud
+    // Audio toestaan alleen wanneer zichtbaar en audio aan
+    function canPlayAudio() { return audioOn && !document.hidden; }
+
+    // Inactiviteit met herhaalzin
     let idleTimer = null; const IDLE_TIMEOUT = 20000;
     function scheduleIdle() {
       if (idleTimer) clearTimeout(idleTimer);
@@ -176,10 +208,10 @@
     function glanceAt(shape, other) { stopScan(shape); const c1 = centerOf(shape), c2 = centerOf(other); const px = c2.x > c1.x ? 56 : 44; const py = randInt(56,60); setPupils(shape, px, py); }
     function wink(shape) { triggerBlink(shape); setTimeout(() => triggerBlink(shape), 160); }
 
-    // Spraak met on-end callback en NL-taal
+    // Spraak met on-end callback en NL
     function speak(text, onend = null, options = {}) {
-      if (!audioOn) return;
-      const interrupt = options.interrupt !== false; // default: interrupt previous
+      if (!canPlayAudio()) return;
+      const interrupt = options.interrupt !== false;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'nl-NL';
       u.rate = 1.0; u.pitch = 1.0;
@@ -189,15 +221,16 @@
       window.speechSynthesis.speak(u);
       return u;
     }
-    // Spreek met cue precies op het woord 'zijkant(en)'
+
+    // Spreek met cue op het woord zijkant(en), zonder geluid wanneer tabblad niet zichtbaar is
     function speakWithZijkantCue(text) {
       const lower = (text || '').toLowerCase();
       let flashed = false;
       const trigger = () => { if (!flashed) { flashed = true; flashSideHints(); } };
-      // Als audio uit staat, toch subtiel cue moment geven
-      if (!audioOn) {
+
+      if (!canPlayAudio()) { // geen geluid, wel subtiele hint
         setTimeout(trigger, 700);
-        return speak(text);
+        return;
       }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'nl-NL'; u.rate = 1.0; u.pitch = 1.0;
@@ -219,10 +252,10 @@
     function pickDutchVoice() { const vs = speechSynthesis.getVoices(); voiceChoice = vs.find(v => v.lang === 'nl-NL') || vs.find(v => v.lang && v.lang.toLowerCase().startsWith('nl')) || null; }
 
     // Geluidjes
-    function playSuccess() { if (!audioOn || !ctx) return; let t = ctx.currentTime; [784, 988, 1319].forEach((f, i) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(f, t + i*0.12); g.gain.setValueAtTime(0.0001, t + i*0.12); g.gain.exponentialRampToValueAtTime(0.2, t + i*0.12 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + i*0.12 + 0.2); o.connect(g); g.connect(ctx.destination); o.start(t + i*0.12); o.stop(t + i*0.12 + 0.22); }); }
-    function playError() { if (!audioOn || !ctx) return; let t = ctx.currentTime; const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300, t); g.gain.setValueAtTime(0.2, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26); o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.28); }
+    function playSuccess() { if (!canPlayAudio() || !ctx) return; let t = ctx.currentTime; [784, 988, 1319].forEach((f, i) => { const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(f, t + i*0.12); g.gain.setValueAtTime(0.0001, t + i*0.12); g.gain.exponentialRampToValueAtTime(0.2, t + i*0.12 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + i*0.12 + 0.2); o.connect(g); g.connect(ctx.destination); o.start(t + i*0.12); o.stop(t + i*0.12 + 0.22); }); }
+    function playError() { if (!canPlayAudio() || !ctx) return; let t = ctx.currentTime; const o = ctx.createOscillator(); const g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(300, t); g.gain.setValueAtTime(0.2, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26); o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.28); }
 
-    // Confetti effect
+    // Confetti
     function confettiBurst(duration = 1600) {
       celebration.innerHTML = '';
       const colors = ['#6c7cff', '#8ec5ff', '#ffb86c', '#ffd49b', '#5ec27a', '#ffe27a'];
@@ -246,7 +279,7 @@
     function renderStreak() {
       if (!streakEl) return;
       streakEl.innerHTML = '';
-      const maxDots = 10; // visuele limiet, cosmetisch
+      const maxDots = 10;
       const count = Math.min(streak, maxDots);
       for (let i = 0; i < count; i++) {
         const d = document.createElement('span');
@@ -353,7 +386,6 @@
               compared = true; dropCircle.classList.add('glow');
               const tgt = playzone.dataset.target || 'breed';
               setTip(`Sleep de rechthoek die ${tgt} is naar de cirkel`);
-              // Eerst volledig uitspreken, daarna vervolgzin
               speak('Goed, je vergelijkt de vormen', () => {
                 speak(`Sleep de rechthoek die ${tgt} is naar de cirkel`, null, { interrupt: true });
               }, { interrupt: true });
@@ -381,8 +413,7 @@
 
     function decideCorrectKind(wA, wB, target) { const bigger = wA > wB ? 'A' : 'B'; const smaller = wA > wB ? 'B' : 'A'; return target === 'breed' ? bigger : smaller; }
 
-    // Bepaal of we in de foutmelding ook iets over de hoogte moeten zeggen
-    // Alleen als het hoogteverschil tussen de twee rechthoeken duidelijk zichtbaar is
+    // Hoogte detail voor feedback
     function heightDetailForFeedback(wSel, hSel, wOther, hOther, threshold = 0.24) {
       const diff = Math.abs(hSel - hOther) / Math.max(hSel, hOther || 1);
       if (diff < threshold) return '';
@@ -391,7 +422,6 @@
       const wider = wSel > wOther;
       if (taller && narrower) return 'hij is hoog en smal';
       if (!taller && wider) return 'hij is laag en breed';
-      // gemengde gevallen, noem alleen de hoogte
       return taller ? 'hij is hoger dan de andere' : 'hij is lager dan de andere';
     }
 
@@ -432,9 +462,22 @@
 
     // Knoppen
     btnRepeat.addEventListener('click', () => { setInstruction(); });
-    btnMute.addEventListener('click', () => { audioOn = !audioOn; btnMute.textContent = audioOn ? '🔊 Geluid' : '🔈 Stil'; });
 
-    // Start robuust
+    function updateMuteVisual() {
+      btnMute.classList.toggle('is-muted', !audioOn);
+      btnMute.setAttribute('aria-pressed', String(!audioOn));
+    }
+    btnMute.addEventListener('click', () => {
+      audioOn = !audioOn;
+      updateMuteVisual();
+      if (ctx) {
+        if (audioOn) ctx.resume().catch(()=>{});
+        else ctx.suspend().catch(()=>{});
+      }
+      if (!audioOn) window.speechSynthesis.cancel();
+    });
+
+    // Start
     function startGame(withAudio = true) {
       if (withAudio) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
       gate.classList.add('hidden'); setTimeout(() => { if (gate && gate.parentNode) gate.remove(); }, 60);
@@ -443,10 +486,9 @@
     btnStart.addEventListener('click', () => startGame(true));
     gate.addEventListener('click', (e) => { if (e.target === gate) startGame(true); });
     document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && document.body.contains(gate)) startGame(true); });
-    // Extra failsafe: als overlay blijft hangen, start visueel zonder audio
     setTimeout(() => { if (document.body.contains(gate)) startGame(false); }, 1500);
 
-    // Voices laden
+    // Voices
     window.speechSynthesis.onvoiceschanged = pickDutchVoice; pickDutchVoice();
 
     // Drop-circle pulse
@@ -459,26 +501,43 @@
       if (shapes.length === 2) { placeShapes(shapes[0], shapes[1]); }
     });
 
-    // Zelftest — bestaande test + extra cases
+    // Pauzeer audio en spraak wanneer de pagina niet zichtbaar is of het venster niet in focus is
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        try { if (ctx && ctx.state === 'running') ctx.suspend(); } catch {}
+        window.speechSynthesis.cancel();
+      } else {
+        try { if (ctx && audioOn && ctx.state === 'suspended') ctx.resume(); } catch {}
+      }
+    });
+    window.addEventListener('blur', () => {
+      try { if (ctx && ctx.state === 'running') ctx.suspend(); } catch {}
+      window.speechSynthesis.cancel();
+    });
+    window.addEventListener('focus', () => {
+      try { if (ctx && audioOn && ctx.state === 'suspended') ctx.resume(); } catch {}
+    });
+
+    // Zelftest
     (function runSelfTests(){
       try {
         console.assert(typeof speak === 'function', 'speak() ontbreekt');
         console.assert(typeof chooseTarget === 'function', 'chooseTarget() ontbreekt');
         const t = chooseTarget();
         console.assert(t === 'breed' || t === 'smal', 'chooseTarget ongeldig');
-        // Extra: beslislogica
         console.assert(decideCorrectKind(200,180,'breed') === 'A', 'decideCorrectKind breed faalt');
         console.assert(decideCorrectKind(200,180,'smal') === 'B', 'decideCorrectKind smal faalt');
         console.assert(decideCorrectKind(150,200,'breed') === 'B', 'decideCorrectKind breed omgekeerd faalt');
-        // Extra: scheduleIdle zet timer
         scheduleIdle();
         console.assert(typeof idleTimer !== 'undefined' && idleTimer !== null, 'scheduleIdle zet geen timer');
-        // tests voor hoogte-detail logica
         console.assert(heightDetailForFeedback(120, 200, 160, 100).includes('hoog') || heightDetailForFeedback(120, 200, 160, 100).includes('hoger'), 'hoogte-detail: hoog verwacht');
         console.assert(heightDetailForFeedback(220, 90, 140, 160).includes('laag') || heightDetailForFeedback(220, 90, 140, 160).includes('lager'), 'hoogte-detail: laag verwacht');
         console.assert(heightDetailForFeedback(160, 120, 158, 118) === '', 'hoogte-detail: leeg bij kleine verschillen');
       } catch(e) { console.error('Zelftest faalde', e); }
     })();
+
+    // Init visuele staat van de mute knop
+    updateMuteVisual();
   </script>
 </body>
 </html>
